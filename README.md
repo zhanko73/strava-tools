@@ -14,35 +14,60 @@ Installation:
 $ pip install -r requirements.txt
 ```
 
-Command line interface:
+Command line:
 -----------------------
 
-To simply login and get the HTML from the dashboard, use the scraper from the command line:
+To simply start the strava prompt:
 
 ```
-$ ./scraper.py "your.email@example.com" "your-password"
+$ ./scraper.py "your.email@example.com"
+strava >>
 ```
-
-If there's a specific page you'd like to get info from, say the [Rapha Rising challenge from 2012](https://www.strava.com/challenges/rapha-rising-circle-of-death), pass that URL as the final argument:
+Here is basic example on how to display, load and send kudos to people as batch
 
 ```
-$ ./scraper.py "your.email@example.com" "your-password" "https://www.strava.com/challenges/rapha-rising-circle-of-death"
-```
-
-Python interface:
------------------
-
-To use the scraper from your own python code, you could do something like this:
-
-```python
-from scraper import StravaScraper
-
-email = "your.email@example.com"
-password = "your-password"
-scraper = StravaScraper(email, password)
-scraper.login()
-dashboard_html = scraper.dashboard_content
-url = "https://www.strava.com/challenges/rapha-rising-circle-of-death"
-response = scraper.get_page(url)
-rapha_html = response.content
+strava >> login
+password:
+Loaded 10 activities
+strava >> activities
+Activities 10/10
+Kudo time              athlete           title
+----+-----------------+-----------------+------------------------------
+✓    Today at 4:41 PM  Cyr*************  Parcour*************
+✓    Today at 4:39 PM  Jay*************  Natatio*************
+✓    Today at 4:24 PM  Der*************  Finishi*************
+✓    Today at 3:41 PM  Ad *************  Afterno*************
+✓    Today at 3:33 PM  Geo*************  Course *************
+✓    Today at 2:44 PM  Nic*************  Randonn*************
+     Today at 1:52 PM  Mad*************  Apprent*************
+✓    Today at 1:08 PM  Céd*************  Derny t*************
+✓    Today at 12:44 PM Mad*************  Apprent*************
+✓    Today at 12:00 PM Nor*************  Belle a*************
+strava >> activities -a mad
+Activities 2/10
+Kudo time              athlete     title
+----+-----------------+-----------+-----------------------
+     Today at 1:52 PM  Mad*************  Apprent*************
+✓    Today at 12:44 PM Mad*************  Course *************
+strava >> load 500
+Loaded 82 activities
+strava >> activities -a mad
+Activities 3/92
+Kudo time                  athlete     title
+----+---------------------+-----------+-----------------------
+     Today at 1:52 PM      Mad*************  Apprent*************
+✓    Today at 12:44 PM     Mad*************  Course *************
+     Yesterday at 12:44 PM Mad*************  Natatio*************
+strava >> kudo
+Sending kudo to Mad************* for Apprent*************
+Ok
+Sending kudo to Mad************* for Natatio*************
+Ok
+strava >> activities -a mad
+Activities 3/92
+Kudo time                  athlete     title
+----+---------------------+-----------+-----------------------
+*    Today at 1:52 PM      Mad*************  Apprent*************
+✓    Today at 12:44 PM     Mad*************  Course *************
+*    Yesterday at 12:44 PM Mad*************  Natatio*************
 ```
