@@ -130,11 +130,11 @@ class StravaScraper(object):
     def store_feed_params(self):
         cursor = first(self.soup.select('div.activity.feed-entry.card:last-of-type')).get('data-rank')
         if cursor and self.feed_cursor != cursor:
-            print("New cursor %s" % cursor)
+            #print("New cursor %s" % cursor)
             self.feed_cursor = cursor
         before = first(self.soup.select('div.activity.feed-entry.card:first-of-type')).get('data-updated-at')
         if before and self.feed_before != before:
-            print("New before %s" % before)
+            #print("New before %s" % before)
             self.feed_before = before
 
     def activities(self):
