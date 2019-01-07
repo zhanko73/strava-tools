@@ -65,7 +65,8 @@ class StravaScraper(object):
     feed_cursor = None
     feed_before = None
 
-    def __init__(self, email):
+    def __init__(self, email, debug=False):
+        self.debug = debug
         self.email = email
         self.session = requests.Session()
         self.get = lambda url: self.__process_response(self.__get(url))
@@ -156,12 +157,13 @@ class StravaScraper(object):
         datetimes = list(map(remove_UTC, datetimesUTC))
         entries = list(zip(ranks, updated, datetimes))
         if len(entries) > 0:
-            print('Entries')
-            pprint(list(each(entries, lambda data: list(map(unix2string, (data[0], data[1]))) + [data[2]] )))
             self.feed_cursor = sorted(entries, key=lambda data:data[0])[0][0]
             self.feed_before = sorted(entries, key=lambda data:data[2])[0][1]
-            print("New cursor %s" % unix2string(self.feed_cursor, True))
-            print("New before %s" % unix2string(self.feed_before, True))
+            if self.debug:
+                print('Entries')
+                pprint(list(each(entries, lambda data: list(map(unix2string, (data[0], data[1]))) + [data[2]] )))
+                print("New cursor %s" % unix2string(self.feed_cursor, True))
+                print("New before %s" % unix2string(self.feed_before, True))
 
     def activities(self):
         for activity in self.soup.select('div.activity'):
@@ -194,9 +196,9 @@ class StravaCLI(cmd.Cmd):
     activities = []
     selected_activities = []
     
-    def __init__(self, email):
+    def __init__(self, email, debug=False):
         cmd.Cmd.__init__(self)
-        self.scraper = StravaScraper(email)
+        self.scraper = StravaScraper(email, debug)
 
     def do_EOF(self, line): return True
 
@@ -310,11 +312,12 @@ def save_history(prev_h_len, histfile):
 def main():
     parser = argparse.ArgumentParser("Strava CLI")
     parser.add_argument("email", help="Strava Username")
+    parser.add_argument("--debug", action='store_true', default=False, help="Debug mode")
     args = parser.parse_args()
 
     init_readline()
     
-    cli = StravaCLI(args.email)
+    cli = StravaCLI(args.email, args.debug)
     cli.cmdloop()
 
 if __name__ == '__main__':
