@@ -4,6 +4,9 @@
 from bs4 import BeautifulSoup
 import argparse, readline
 import requests
+import os
+import time
+import sys
 from datetime import datetime
 from pprint import pprint
 
@@ -22,11 +25,21 @@ def find(predicate, iterable):
 
 def first(xs, mapper=lambda x:x):
     if len(xs) > 0: return mapper(xs[0])
+def each(xs, mapper=lambda x:x):
+    for x in xs:
+        yield mapper(x)
 
 def tag_string(tag):
     return tag.string.replace('\n','')
+def tag_get(attr):
+    return lambda tag: tag.get(attr)
 def tag_datetime(tag):
     return datetime.strptime(tag.get('datetime'), '%Y-%m-%d %H:%M:%S %Z')
+def unix2string(value, all=False):
+    fmt = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(float(value))))
+    if all:
+        return '(%s -> %s)' % (value, fmt)
+    return fmt
 
 
 class StravaScraper(object):
@@ -46,6 +59,7 @@ class StravaScraper(object):
     is_authed = False
 
     soup = None
+    response = None
     csrf_token = None
     owner_id = None
     feed_cursor = None
@@ -76,7 +90,8 @@ class StravaScraper(object):
         return response
 
     def __store_response(self, response):
-        self.soup = BeautifulSoup(response.content, 'lxml')
+        self.response = response
+        self.soup = BeautifulSoup(response.text, 'lxml')
         meta = first(self.soup.select('meta[name="csrf-token"]'))
         if meta:
             self.csrf_token = meta.get('content')
@@ -84,9 +99,10 @@ class StravaScraper(object):
 
     def login(self, password):
         self.get_store(StravaScraper.URL_LOGIN)
-        utf8 = self.soup.find_all('input',
+        soup = BeautifulSoup(self.response.content, 'lxml')
+        utf8 = soup.find_all('input',
                              {'name': 'utf8'})[0].get('value').encode('utf-8')
-        token = self.soup.find_all('input',
+        token = soup.find_all('input',
                               {'name': 'authenticity_token'})[0].get('value')
         login_data = {
             'utf8': utf8,
@@ -97,17 +113,21 @@ class StravaScraper(object):
         }
 
         self.post_store(StravaScraper.URL_SESSION, data=login_data)
-        response = self.load_dashboard()
-        assert("Log Out" in response.text)
+        self.load_dashboard()
+        assert("Log Out" in self.response.text)
         self.is_authed = True
-        profile_a = first(self.soup.select('div.athlete-profile a'))
-        if profile_a:
-            self.owner_id = profile_a.get('href').split('/')[2]
-        else: print('Profile issue')
+        try:
+            profile = first(self.soup.select('div.athlete-profile'))
+            self.owner_id = first(profile.select('a'), lambda x: x.get('href').split('/')[-1])
+            athlete_name = first(profile.select('div.athlete-name'), tag_string)
+            print('Welcome %s' % athlete_name)
+        except:
+            print('/!\\ Profile information cannot be retrieved, some features are disabled')
 
     def send_kudo(self, activity_id):
-        response = self.post(StravaScraper.URL_SEND_KUDO % activity_id)
-        try: return response.json()['success'] == 'true'
+        try:
+            response = self.post(StravaScraper.URL_SEND_KUDO % activity_id)
+            return response.json()['success'] == 'true'
         except: return False
 
     def load_page(self):
@@ -119,23 +139,29 @@ class StravaScraper(object):
             self.soup = BeautifulSoup(file.read(), 'lxml')
 
     def load_dashboard(self, num=10):
-        response = self.get_store(StravaScraper.URL_DASHBOARD % (num+1))
+        self.get_store(StravaScraper.URL_DASHBOARD % (num+1))
         self.store_feed_params()
-        return response
 
     def load_feed_next(self):
         self.get_store(StravaScraper.URL_DASHBOARD_FEED % (self.owner_id, self.feed_before, self.feed_cursor))
         self.store_feed_params()
 
     def store_feed_params(self):
-        cursor = first(self.soup.select('div.activity.feed-entry.card:last-of-type')).get('data-rank')
-        if cursor and self.feed_cursor != cursor:
-            #print("New cursor %s" % cursor)
-            self.feed_cursor = cursor
-        before = first(self.soup.select('div.activity.feed-entry.card:first-of-type')).get('data-updated-at')
-        if before and self.feed_before != before:
-            #print("New before %s" % before)
-            self.feed_before = before
+        remove_UTC = lambda x:x.replace(' UTC','')
+
+        cards = list(self.soup.select('div.activity.feed-entry.card'))
+        ranks = list(each(cards, tag_get('data-rank')))
+        updated = list(each(cards, tag_get('data-updated-at')))
+        datetimesUTC = list(each(self.soup.select('div.activity.feed-entry.card time time'), tag_get('datetime')))
+        datetimes = list(map(remove_UTC, datetimesUTC))
+        entries = list(zip(ranks, updated, datetimes))
+        if len(entries) > 0:
+            print('Entries')
+            pprint(list(each(entries, lambda data: list(map(unix2string, (data[0], data[1]))) + [data[2]] )))
+            self.feed_cursor = sorted(entries, key=lambda data:data[0])[0][0]
+            self.feed_before = sorted(entries, key=lambda data:data[2])[0][1]
+            print("New cursor %s" % unix2string(self.feed_cursor, True))
+            print("New before %s" % unix2string(self.feed_before, True))
 
     def activities(self):
         for activity in self.soup.select('div.activity'):
@@ -150,8 +176,11 @@ class StravaScraper(object):
                 }
                 yield entry
             except Exception as e:
-                print(e)
+                #with open('/tmp/soup.html', 'w') as file: file.write(self.soup.text)
+                #with open('/tmp/content.html', 'w') as file: file.write(self.content)
+                import traceback
                 print("Unparsable %s" % activity)
+                traceback.print_exc(file=sys.stdout)
 
 
 import cmd, getpass, texttables, functools
@@ -176,8 +205,10 @@ class StravaCLI(cmd.Cmd):
         self.store_activities()
 
     def do_login(self, line):
-        pwd = getpass.getpass('password:')
-        self.scraper.login(pwd)
+        if 'STRAVA_PWD' in os.environ:
+            self.scraper.login(os.environ['STRAVA_PWD'])
+        else:
+            self.scraper.login(getpass.getpass('password:'))
         self.store_activities()
 
     def do_load(self, line):
@@ -206,7 +237,7 @@ class StravaCLI(cmd.Cmd):
 
     def do_kudo(self, line):
         for activity in filter(self.filter_kudo(False), self.selected_activities):
-            print('Sending kudo to %s for %s' % (activity['athlete'], activity['title']))
+            print('Kudoing %s for %s .. ' % (activity['athlete'], activity['title']), end='')
             status = self.scraper.send_kudo(activity['id'])
             if status:
                 activity['kudo'] = True
