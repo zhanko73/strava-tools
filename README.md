@@ -1,6 +1,12 @@
 stravalib-scraper
 =========
 
+> This library is a fork from [loisaidasam/stravalib-scraper](https://github.com/loisaidasam/stravalib-scraper) with extentions
+> - CLI
+> - load following activity feed
+> - **send batch kudos**
+> - display / filter activities
+
 Library for web-scraping Strava data.
 
 Note: Strava does have a [developer portal](https://developers.strava.com/) complete with a proper API and examples. This web-scraping based library was initially written years ago, before that API officially came about.
