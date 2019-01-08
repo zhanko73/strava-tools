@@ -65,8 +65,9 @@ class StravaScraper(object):
     feed_cursor = None
     feed_before = None
 
-    def __init__(self, email, debug=False):
+    def __init__(self, email, cert=None, debug=False):
         self.debug = debug
+        self.cert = cert
         self.email = email
         self.session = requests.Session()
         self.get = lambda url: self.__process_response(self.__get(url))
@@ -75,7 +76,7 @@ class StravaScraper(object):
         self.post_store = lambda url,data=None: self.__store_response(self.__post(url, data))
 
     def __get(self, url):
-        return self.session.get(url, headers=StravaScraper.BASE_HEADERS)
+        return self.session.get(url, headers=StravaScraper.BASE_HEADERS, verify=self.cert)
 
     def __post(self, url, data=None):
         csrf_header = {}
@@ -83,8 +84,8 @@ class StravaScraper(object):
 
         headers = {**StravaScraper.BASE_HEADERS, **csrf_header}
         if data:
-            return self.session.post(url, data=data, headers=headers)
-        return self.session.post(url, headers=headers)
+            return self.session.post(url, data=data, headers=headers, verify=self.cert)
+        return self.session.post(url, headers=headers, verify=self.cert)
 
     def __process_response(self, response):
         response.raise_for_status()
@@ -196,9 +197,9 @@ class StravaCLI(cmd.Cmd):
     activities = []
     selected_activities = []
     
-    def __init__(self, email, debug=False):
+    def __init__(self, scraper):
         cmd.Cmd.__init__(self)
-        self.scraper = StravaScraper(email, debug)
+        self.scraper = scraper
 
     def do_EOF(self, line): return True
 
@@ -312,12 +313,13 @@ def save_history(prev_h_len, histfile):
 def main():
     parser = argparse.ArgumentParser("Strava CLI")
     parser.add_argument("email", help="Strava Username")
+    parser.add_argument("--cert", help="Cert file")
     parser.add_argument("--debug", action='store_true', default=False, help="Debug mode")
     args = parser.parse_args()
 
     init_readline()
-    
-    cli = StravaCLI(args.email, args.debug)
+    scraper = StravaScraper(args.email, cert=args.cert, debug=args.debug)
+    cli = StravaCLI(scraper)
     cli.cmdloop()
 
 if __name__ == '__main__':
