@@ -7,8 +7,11 @@ import requests
 import os
 import time
 import sys
+import re
 from datetime import datetime
 from pprint import pprint
+import cmd, getpass, texttables, functools
+from sys import stdout
 
 
 VERSION = '0.1.0'
@@ -175,6 +178,9 @@ class StravaScraper(object):
                     'datetime': first(activity.select('time time'), tag_datetime),
                     'title': first(activity.select('h3 a'), tag_string),
                     'id': first(activity.select('h3 a'), lambda x: x.get('href').split('/')[-1]),
+                    'distance': self._extract_stat(activity, r'\s*Distance\s*(.+)\s'),
+                    'duration': self._extract_stat(activity, r'\s*Time\s*(.+)\s'),
+                    'elevation':self._extract_stat(activity, r'\s*Elevation Gain\s*(.+)\s'),
                     'kudo': first(activity.select('div.entry-footer div.media-actions button.js-add-kudo')) is None
                 }
                 yield entry
@@ -185,9 +191,13 @@ class StravaScraper(object):
                 print("Unparsable %s" % activity)
                 traceback.print_exc(file=sys.stdout)
 
+    def _extract_stat(self, activity, pattern):
+        for stat in activity.select('div.media-body ul.list-stats .stat'):
+            m = re.search(pattern, stat.text)
+            if m: return m.group(1)
+        return ''
 
-import cmd, getpass, texttables, functools
-from sys import stdout
+
 class StravaCLI(cmd.Cmd):
 
     class dialect(texttables.Dialect):
@@ -222,6 +232,9 @@ class StravaCLI(cmd.Cmd):
             self.scraper.load_dashboard(int(args.num))
         self.store_activities()
 
+    def emptyline(self):
+        pass
+
     def do_activities(self, line):
         args = self.parse(line, '-a: -t: -k')
         predicate = functools.reduce(lambda a,b: lambda item: a(item) and b(item), [
@@ -234,7 +247,8 @@ class StravaCLI(cmd.Cmd):
         print('Activities %d/%d' % (len(self.selected_activities), len(self.activities)))
         if len(self.selected_activities) > 0:
             data = map(self.activity_for_output, self.selected_activities)
-            with texttables.dynamic.DictWriter(stdout, ['Kudo', 'time', 'athlete', 'title'], dialect=StravaCLI.dialect) as w:
+            headers = ['Kudo', 'time', 'athlete', 'duration' ,'distance' ,'elevation', 'title']
+            with texttables.dynamic.DictWriter(stdout, headers, dialect=StravaCLI.dialect) as w:
                 w.writeheader()
                 w.writerows(data)
 
@@ -291,6 +305,31 @@ class StravaCLI(cmd.Cmd):
                 parser.add_argument(p[0], action='store_const', const=True)
         args = parser.parse_args(line.split())
         return args
+    
+    def onecmd(self, line):
+        """Interpret the argument as though it had been typed in response
+        to the prompt.
+        This may be overridden, but should not normally need to be;
+        see the precmd() and postcmd() methods for useful execution hooks.
+        The return value is a flag indicating whether interpretation of
+        commands by the interpreter should stop.
+        """
+        cmd, arg, line = self.parseline(line)
+        if not line:
+            return self.emptyline()
+        if cmd is None:
+            return self.default(line)
+        self.lastcmd = line
+        if line == 'EOF' :
+            self.lastcmd = ''
+        if cmd == '':
+            return self.default(line)
+        else:
+            try:
+                func = getattr(self, 'do_' + cmd)
+            except AttributeError:
+                return self.default(line)
+            return func(arg)
 
 
 def init_readline():
