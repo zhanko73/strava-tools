@@ -18,32 +18,15 @@ VERSION = '0.1.0'
 
 # Utility functions
 
-def true_predicate():
-    return lambda x: True
-
 def find(predicate, iterable):
     for i in filter(predicate, iterable):
         return i
     return None
-
 def first(xs, mapper=lambda x:x):
     if len(xs) > 0: return mapper(xs[0])
 def each(xs, mapper=lambda x:x):
     for x in xs:
         yield mapper(x)
-
-def tag_string(tag):
-    return tag.string.replace('\n','')
-def tag_get(attr):
-    return lambda tag: tag.get(attr)
-def tag_datetime(tag):
-    return datetime.strptime(tag.get('datetime'), '%Y-%m-%d %H:%M:%S %Z')
-def unix2string(value, all=False):
-    fmt = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(float(value))))
-    if all:
-        return '(%s -> %s)' % (value, fmt)
-    return fmt
-
 
 class StravaScraper(object):
     # https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent
@@ -143,7 +126,7 @@ class StravaScraper(object):
         with open('feed.html', 'r') as file:
             self.soup = BeautifulSoup(file.read(), 'lxml')
 
-    def load_dashboard(self, num=10):
+    def load_dashboard(self, num=30):
         self.get_store(StravaScraper.URL_DASHBOARD % (num+1))
         self.store_feed_params()
 
@@ -173,11 +156,11 @@ class StravaScraper(object):
         for activity in self.soup.select('div.activity'):
             try:
                 entry = {
-                    'athlete': first(activity.select('a.entry-owner'), tag_string),
-                    'time': first(activity.select('time time'), tag_string),
-                    'datetime': first(activity.select('time time'), tag_datetime),
-                    'title': first(activity.select('h3 a'), tag_string),
-                    'id': first(activity.select('h3 a'), lambda x: x.get('href').split('/')[-1]),
+                    'athlete': first(activity.select('a.entry-owner'), self.tag_string()),
+                    'time': first(activity.select('time time'), self.tag_string()),
+                    'datetime': first(activity.select('time time'), self.tag_get('datetime', self.parse_datetime)),
+                    'title': first(activity.select('h3 a'), self.tag_string()),
+                    'id': first(activity.select('h3 a'), self.tag_get('href', lambda x: x.split('/')[-1])),
                     'distance': self._extract_stat(activity, r'\s*Distance\s*(.+)\s'),
                     'duration': self._extract_stat(activity, r'\s*Time\s*(.+)\s'),
                     'elevation':self._extract_stat(activity, r'\s*Elevation Gain\s*(.+)\s'),
@@ -185,11 +168,23 @@ class StravaScraper(object):
                 }
                 yield entry
             except Exception as e:
-                #with open('/tmp/soup.html', 'w') as file: file.write(self.soup.text)
-                #with open('/tmp/content.html', 'w') as file: file.write(self.content)
                 import traceback
                 print("Unparsable %s" % activity)
                 traceback.print_exc(file=sys.stdout)
+
+    # Utility functions
+    def tag_string(self, mapper=lambda x:x):
+        return lambda tag: mapper(tag.string.replace('\n',''))
+    def tag_get(self, attr, mapper=lambda x:x):
+        return lambda tag: mapper(tag.get(attr))
+    def parse_datetime(self, value):
+        return datetime.strptime(value, '%Y-%m-%d %H:%M:%S %Z')
+    def unix2string(self, value, all=False):
+        fmt = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(float(value))))
+        if all:
+            return '(%s -> %s)' % (value, fmt)
+        return fmt
+
 
     def _extract_stat(self, activity, pattern):
         for stat in activity.select('div.media-body ul.list-stats .stat'):
@@ -283,13 +278,16 @@ class StravaCLI(cmd.Cmd):
         print("Loaded %d activities" % len(new_activities))
 
     def filter_athlete(self, param):
-        return lambda item: param in item['athlete'].lower() if param else true_predicate()
+        return lambda item: param.lower() in item['athlete'].lower() if param else self.true_predicate
     def filter_title(self, param):
-        return lambda item: param in item['title'].lower() if param else true_predicate()
+        return lambda item: param.lower() in item['title'].lower() if param else self.true_predicate
     def filter_kudo(self, sent):
-        return lambda item: item['kudo'] == sent if sent != None else true_predicate()
+        return lambda item: item['kudo'] == sent if sent != None else self.true_predicate
     def filter_id(self, activity_id):
-        return lambda item: item['id'] == activity_id if activity_id else true_predicate()
+        return lambda item: item['id'] == activity_id if activity_id else self.true_predicate
+
+    # utility functions
+    def true_predicate(self, x): return true
 
     def parse(self, line, params):
         parser = argparse.ArgumentParser()
@@ -305,31 +303,6 @@ class StravaCLI(cmd.Cmd):
                 parser.add_argument(p[0], action='store_const', const=True)
         args = parser.parse_args(line.split())
         return args
-    
-    def onecmd(self, line):
-        """Interpret the argument as though it had been typed in response
-        to the prompt.
-        This may be overridden, but should not normally need to be;
-        see the precmd() and postcmd() methods for useful execution hooks.
-        The return value is a flag indicating whether interpretation of
-        commands by the interpreter should stop.
-        """
-        cmd, arg, line = self.parseline(line)
-        if not line:
-            return self.emptyline()
-        if cmd is None:
-            return self.default(line)
-        self.lastcmd = line
-        if line == 'EOF' :
-            self.lastcmd = ''
-        if cmd == '':
-            return self.default(line)
-        else:
-            try:
-                func = getattr(self, 'do_' + cmd)
-            except AttributeError:
-                return self.default(line)
-            return func(arg)
 
 
 def init_readline():
