@@ -158,7 +158,7 @@ class StravaScraper(object):
         self.__store_feed_params()
 
     def load_feed_next(self):
-        self.__get_store(StravaScraper.URL_DASHBOARD_FEED % (self.config['owner_id'], self.feed_before, self.feed_cursor))
+        self.get_store(StravaScraper.URL_DASHBOARD_FEED % (self.config['owner_id'], self.feed_before, self.feed_cursor))
         self.__store_feed_params()
 
     def __store_feed_params(self):
