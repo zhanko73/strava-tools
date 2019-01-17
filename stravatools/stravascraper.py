@@ -208,7 +208,7 @@ class StravaScraper(object):
         return ''
 
 class ScraperConfig(object):
-    CONFIG_DIR = '/'.join( (str(pathlib.Path.home()), '.stravalib-scraper'))
+    CONFIG_DIR = '/'.join( (str(pathlib.Path.home()), '.strava-tools'))
     USER = 'user.json'
     COOKIES = 'cookies.txt'
 
