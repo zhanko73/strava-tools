@@ -153,8 +153,3 @@ def main():
     scraper = StravaScraper(cert=args.cert, debug=args.debug)
     cli = StravaCLI(scraper)
     cli.cmdloop()
-
-if __name__ == '__main__':
-    main()
-
-
