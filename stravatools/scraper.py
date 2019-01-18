@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 from pprint import pprint
 
-from _intern.tools import *
+from stravatools._intern.tools import *
 
 VERSION = '0.1.0'
 

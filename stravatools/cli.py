@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import cmd, texttables, functools, argparse, readline, sys, os, getpass
-from stravascraper import StravaScraper
+from stravatools.scraper import StravaScraper
 
-from _intern.tools import *
+from stravatools._intern.tools import *
 
 class StravaCLI(cmd.Cmd):
 

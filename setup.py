@@ -1,15 +1,17 @@
 import os
 
-import setuptools
+from setuptools import setup, find_packages
 
-VERSION = '0.1.0'
+VERSION = '0.0.1'
 DESCRIPTION = 'Strava Command-Line Tools'
 
 here = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
-setuptools.setup(
+print(find_packages())
+
+setup(
     python_requires='>=3.5',
     name='strava-tools',
     description=DESCRIPTION,
@@ -19,7 +21,7 @@ setuptools.setup(
     author='Pierrick Terrettaz',
     author_email='pierrick@gmail.com',
     url='https://github.com/terrettaz/strava-tools',
-    packages=['stravatools'],
+    packages=find_packages(),
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Natural Language :: English",
@@ -32,8 +34,9 @@ setuptools.setup(
         'requests',
         'texttables'
     ],
-    entry_points='''
-        [console_scripts]
-        stravatools=stravatools.stravacli:main
-    ''',
+     entry_points={
+        'console_scripts': [
+            'stravatools = stravatools.cli:main',
+        ],
+    },
 )
