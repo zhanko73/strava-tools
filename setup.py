@@ -3,8 +3,8 @@
 import os
 
 from setuptools import setup, find_packages
+from stravatools import __version__
 
-VERSION = '0.0.2'
 DESCRIPTION = 'Strava Command-Line Tools'
 
 here = os.path.abspath(os.path.dirname(__file__))
@@ -20,7 +20,7 @@ setup(
     description=DESCRIPTION,
     long_description=long_description,
     long_description_content_type='text/markdown',
-    version=VERSION,
+    version=__version__,
     license='MIT',
     author='Pierrick Terrettaz',
     author_email='pierrick@gmail.com',

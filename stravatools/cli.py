@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 
-import cmd, texttables, functools, argparse, readline, sys, os, getpass
-from stravatools.scraper import StravaScraper, LoginError
+import cmd, texttables, functools, argparse, readline, sys, os, getpass, datetime
+from stravatools.scraper import StravaScraper, NotLogged
 
+from stravatools import __version__
 from stravatools._intern.tools import *
 
 class StravaCLI(cmd.Cmd):
@@ -18,15 +19,11 @@ class StravaCLI(cmd.Cmd):
         cmd.Cmd.__init__(self)
         self.scraper = scraper
 
-    def do_EOF(self, line):
-        self.scraper.close()
-        return True
-
-    #def do_sample(self, line):
-    #    self.scraper.load_page()
-    #    self.store_activities()
-
     def do_login(self, line):
+        '''Login to Strava (www.strava.com)
+  You will be asked to provider you username (email) and password
+  and eventually store a cookie to keep your strava session open'''
+    
         username = input('Username: ')
         password = getpass.getpass('Password:')
         remember = 'n' != input('Remember session (password will not be stored) [Y/n]: ').lower()
@@ -36,33 +33,46 @@ class StravaCLI(cmd.Cmd):
             print('Username or Password incorrect')
 
     def do_logout(self, line):
+        '''Simply clean your cookies session if any was store'''
+
         self.scraper.logout()
         print('Logged out')
 
     def do_load(self, line):
-        args = self.parse(line, '-next num:?10')
+        '''Loads activity feed from Strava and store activities
+  load [num] (default 20)
+    Loads n activties. From latest
+  load -next
+    Loads next activity from activity feed. Usually this will load the next 30 activities'''
+
+        args = self.parse(line, '-next num:?20')
         if args.next:
             self.scraper.load_feed_next()
         else:
             self.scraper.load_dashboard(int(args.num))
         self.store_activities()
 
-    def emptyline(self):
-        pass
-
-    def onecmd(self, line):
-        try:
-            return super().onecmd(line)
-        except LoginError:
-            print('You need to login first')
-            return False
-
     def do_activities(self, line):
-        args = self.parse(line, '-a: -t: -k')
-        predicate = functools.reduce(lambda a,b: lambda item: a(item) and b(item), [
+        '''Dispaly loaded activity and let to filter them
+  activities
+    Display all activities
+  activities -a <pattern>
+    Filter and display activities that pattern match the athlete name
+  activities -t <pattern>
+    Filter and display activities that pattern match the title name
+  activities -K
+    Filter and display activities you have already sent a kudo
+  activities -k
+    Filter and display activities you haven't sent a kudo
+
+  <pattern> [-]<string> ('-' negate)'''
+
+        args = self.parse(line, '-a: -t: -k -K')
+        predicate = all_predicates([
             self.filter_athlete(args.a),
             self.filter_title(args.t),
-            self.filter_kudo(args.k)
+            self.filter_kudo(args.k),
+            self.filter_kudo(args.K)
         ])
         
         self.selected_activities = list(filter(predicate, self.activities))
@@ -75,6 +85,8 @@ class StravaCLI(cmd.Cmd):
                 w.writerows(data)
 
     def do_kudo(self, line):
+        '''Send kudo to all filtered activities'''
+
         for activity in filter(self.filter_kudo(False), self.selected_activities):
             print('Kudoing %s for %s .. ' % (activity['athlete'], activity['title']), end='')
             status = self.scraper.send_kudo(activity['id'])
@@ -83,6 +95,27 @@ class StravaCLI(cmd.Cmd):
                 activity['dirty'] = True
                 print('Ok')
             else: print('Failed')
+
+    def do_quit(self, line):
+        'Nicely quit the shell'
+        self.scraper.close()
+        print("You're safe to go!")
+        return True
+
+    def do_EOF(self, line):
+        "Ctrl+D to quit, same as 'quit' command"
+        self.scraper.close()
+        return True
+
+    def emptyline(self):
+        pass
+
+    def onecmd(self, line):
+        try:
+            return super().onecmd(line)
+        except NotLogged:
+            print('You need to login first')
+            return False
 
     def activity_for_output(self, activity):
         data = {'Kudo':''}
@@ -105,16 +138,13 @@ class StravaCLI(cmd.Cmd):
         print("Loaded %d activities" % len(new_activities))
 
     def filter_athlete(self, param):
-        return lambda item: param.lower() in item['athlete'].lower() if param else self.true_predicate
+        return lambda item: contains(param, item['athlete'])
     def filter_title(self, param):
-        return lambda item: param.lower() in item['title'].lower() if param else self.true_predicate
+        return lambda item: contains(param, item['title'])
     def filter_kudo(self, sent):
-        return lambda item: item['kudo'] == sent if sent != None else self.true_predicate
-    def filter_id(self, activity_id):
-        return lambda item: item['id'] == activity_id if activity_id else self.true_predicate
-
-    # utility functions
-    def true_predicate(self, x): return true
+        return lambda item: eq_bool(sent, item['kudo'])
+    def filter_id(self, param):
+        return lambda item: eq(param, item['id'])
 
     def parse(self, line, params):
         parser = argparse.ArgumentParser()
@@ -127,7 +157,8 @@ class StravaCLI(cmd.Cmd):
                 else:
                     parser.add_argument(p[0])
             else:
-                parser.add_argument(p[0], action='store_const', const=True)
+                value = p[0] == p[0].upper() # example: -K => True, -k => False
+                parser.add_argument(p[0], action='store_const', const=value)
         args = parser.parse_args(line.split())
         return args
 
@@ -156,6 +187,9 @@ def main():
     parser.add_argument("--debug", action='store_const', const=1, default=0, help="Debug mode")
     parser.add_argument("--debug-verbose", action='store_const', const=2, default=0, help="Verbose debug mode")
     args = parser.parse_args()
+
+    print('Strava Shell %s' % (__version__))
+
     debug = args.debug + args.debug_verbose
     if debug > 0:
         print(args)

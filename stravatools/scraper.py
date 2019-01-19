@@ -7,12 +7,11 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 from pprint import pprint
 
+from stravatools import __version__
 from stravatools._intern.tools import *
 
-VERSION = '0.1.0'
-
 class StravaScraper(object):
-    USER_AGENT = "stravatools/%s" % VERSION
+    USER_AGENT = "stravatools/%s" % __version__
     BASE_HEADERS = {'User-Agent': USER_AGENT}
     CSRF_H = 'x-csrf-token'
     
@@ -72,7 +71,7 @@ class StravaScraper(object):
     def __check_response(self, response, logged=False):
         response.raise_for_status()
         if logged and "class='logged-out" in response.text:
-            raise LoginError()
+            raise NotLogged()
         return response
 
     def __debug_request(self, url):
@@ -219,7 +218,7 @@ class StravaScraper(object):
             if m: return m.group(1)
         return ''
 
-class LoginError(Exception):
+class NotLogged(Exception):
     pass
 
 class ScraperConfig(object):
