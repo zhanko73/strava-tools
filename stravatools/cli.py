@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import cmd, texttables, functools, argparse, readline, sys, os, getpass
-from stravatools.scraper import StravaScraper
+from stravatools.scraper import StravaScraper, LoginError
 
 from stravatools._intern.tools import *
 
@@ -22,14 +22,15 @@ class StravaCLI(cmd.Cmd):
         self.scraper.close()
         return True
 
-    def do_sample(self, line):
-        self.scraper.load_page()
-        self.store_activities()
+    #def do_sample(self, line):
+    #    self.scraper.load_page()
+    #    self.store_activities()
 
     def do_login(self, line):
         username = input('Username: ')
         password = getpass.getpass('Password:')
-        if self.scraper.login(username, password):
+        remember = 'n' != input('Remember session (password will not be stored) [Y/n]: ').lower()
+        if self.scraper.login(username, password, remember):
             self.store_activities()
         else:
             print('Username or Password incorrect')
@@ -48,6 +49,13 @@ class StravaCLI(cmd.Cmd):
 
     def emptyline(self):
         pass
+
+    def onecmd(self, line):
+        try:
+            return super().onecmd(line)
+        except LoginError:
+            print('You need to login first')
+            return False
 
     def do_activities(self, line):
         args = self.parse(line, '-a: -t: -k')
@@ -145,10 +153,13 @@ def save_history(prev_h_len, histfile):
 def main():
     parser = argparse.ArgumentParser("Strava CLI")
     parser.add_argument("--cert", help="Cert file")
-    parser.add_argument("--debug", action='store_true', default=False, help="Debug mode")
+    parser.add_argument("--debug", action='store_const', const=1, default=0, help="Debug mode")
+    parser.add_argument("--debug-verbose", action='store_const', const=2, default=0, help="Verbose debug mode")
     args = parser.parse_args()
-
+    debug = args.debug + args.debug_verbose
+    if debug > 0:
+        print(args)
     init_readline()
-    scraper = StravaScraper(cert=args.cert, debug=args.debug)
+    scraper = StravaScraper(cert=args.cert, debug=debug)
     cli = StravaCLI(scraper)
     cli.cmdloop()

@@ -31,15 +31,13 @@ class StravaScraper(object):
     feed_cursor = None
     feed_before = None
 
-    def __init__(self, cert=None, debug=False):
+    def __init__(self, cert=None, debug=0):
         self.config = ScraperConfig()
         self.debug = debug
         self.cert = cert
         self.session = self.__create_session()
-        self.get = lambda url, allow_redirects=True: self.__process_response(self.__get(url, allow_redirects=allow_redirects))
-        self.post = lambda url, data=None, allow_redirects=True: self.__process_response(self.__post(url, data, allow_redirects=allow_redirects))
-        self.get_store = lambda url,allow_redirects=True: self.__store_response(self.__get(url, allow_redirects=allow_redirects))
-        self.post_store = lambda url,data=None,allow_redirects=True: self.__store_response(self.__post(url, data, allow_redirects=allow_redirects))
+        self.get = lambda url, logged=True, allow_redirects=True: self.__store_response(self.__get(url, logged, allow_redirects))
+        self.post = lambda url, data=None, logged=True, allow_redirects=True: self.__store_response(self.__post(url, data, logged, allow_redirects))
         self.greeting()
 
     def __create_session(self):
@@ -50,13 +48,14 @@ class StravaScraper(object):
         session.cookies = cookies
         return session
 
-    def __get(self, url, allow_redirects=True):
+    def __get(self, url, logged=True, allow_redirects=True):
         self.__debug_request(url)
         response = self.session.get(url, headers=StravaScraper.BASE_HEADERS, verify=self.cert, allow_redirects=allow_redirects)
         self.__debug_response(response)
+        self.__check_response(response, logged)
         return response
 
-    def __post(self, url, data=None, allow_redirects=True):
+    def __post(self, url, data=None, logged=True, allow_redirects=True):
         self.__debug_request(url)
         csrf_header = {}
         if self.csrf_token: csrf_header[StravaScraper.CSRF_H] = self.csrf_token
@@ -67,20 +66,33 @@ class StravaScraper(object):
         else:
             response = self.session.post(url, headers=headers, verify=self.cert, allow_redirects=allow_redirects)
         self.__debug_response(response)
+        self.__check_response(response, logged)
         return response
 
-    def __process_response(self, response):
+    def __check_response(self, response, logged=False):
         response.raise_for_status()
+        if logged and "class='logged-out" in response.text:
+            raise LoginError()
         return response
 
     def __debug_request(self, url):
-        if self.debug:
+        if self.debug > 0:
             print('>>> GET %s' % url)
 
     def __debug_response(self, response):
-        if self.debug:
+        if self.debug > 0:
             print('<<< Status %d' % response.status_code)
+            print('<<< Headers')
             pprint(response.headers)
+            if self.debug > 1 and 'Content-Type' in response.headers:
+                print('<<< Body')
+                if response.headers['Content-Type'] == 'text/html':
+                    print(response.text)
+                elif response.headers['Content-Type'] == 'application/json':
+                    pprint(json.loads(response.text))
+                else:
+                    print(response.text)
+
 
     def __store_response(self, response):
         self.response = response
@@ -91,14 +103,14 @@ class StravaScraper(object):
         return response
 
     def __print_traceback(self):
-        if self.debug: traceback.print_exc(file=sys.stdout)
+        if self.debug > 0: traceback.print_exc(file=sys.stdout)
 
     def close(self):
         self.config.save()
         self.session.cookies.save()
         
     def login(self, email, password, remember_me=True):
-        self.get_store(StravaScraper.URL_LOGIN, allow_redirects=False)
+        self.get(StravaScraper.URL_LOGIN, logged=False, allow_redirects=False)
         if self.response.status_code == 302:
             self.greeting()
             return True
@@ -118,7 +130,7 @@ class StravaScraper(object):
         if remember_me:
             login_data['remember_me'] = 'on'
 
-        self.post_store(StravaScraper.URL_SESSION, data=login_data, allow_redirects=False)
+        self.post(StravaScraper.URL_SESSION, login_data, logged=False, allow_redirects=False)
         if self.response.status_code == 302 and self.response.headers['Location'] == StravaScraper.URL_LOGIN:
             return False
 
@@ -154,11 +166,11 @@ class StravaScraper(object):
             self.soup = BeautifulSoup(file.read(), 'lxml')
 
     def load_dashboard(self, num=30):
-        self.get_store(StravaScraper.URL_DASHBOARD % (num+1))
+        self.get(StravaScraper.URL_DASHBOARD % (num+1))
         self.__store_feed_params()
 
     def load_feed_next(self):
-        self.get_store(StravaScraper.URL_DASHBOARD_FEED % (self.config['owner_id'], self.feed_before, self.feed_cursor))
+        self.get(StravaScraper.URL_DASHBOARD_FEED % (self.config['owner_id'], self.feed_before, self.feed_cursor))
         self.__store_feed_params()
 
     def __store_feed_params(self):
@@ -206,6 +218,9 @@ class StravaScraper(object):
             m = re.search(pattern, stat.text)
             if m: return m.group(1)
         return ''
+
+class LoginError(Exception):
+    pass
 
 class ScraperConfig(object):
     CONFIG_DIR = '/'.join( (str(pathlib.Path.home()), '.strava-tools'))
