@@ -1,21 +1,22 @@
 strava-tools
 ============
 
-> This library became as a  fork from [loisaidasam/stravalib-scraper](https://github.com/loisaidasam/stravalib-scraper) with some extentions
-> - Shell
+Library for web-scraping Strava data.
+
+> This library became as a fork from [loisaidasam/stravalib-scraper](https://github.com/loisaidasam/stravalib-scraper) with some extentions
+> - a shell
 > - load following activity feed
 > - **send batch kudos**
 > - display / filter activities
 
-Library for web-scraping Strava data.
-
 Note: Strava does have a [developer portal](https://developers.strava.com/) complete with a proper API and examples. This web-scraping based library is written to complete the lack of feature of the standard API. Accessing Friends' acitivities and interations with them like kudoing.
 
-Installation:
+
+Installation via PyPi:
 -------------
 
 ```
-$ pip install -r requirements.txt
+$ pip install strava-tools
 ```
 
 Command line:
@@ -24,7 +25,7 @@ Command line:
 To simply start the strava shell:
 
 ```
-$ python stravatools
+$ strava-shell
 strava >>
 ```
 Here is basic example on how to display, load and send kudos to people as batch
