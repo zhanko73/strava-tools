@@ -50,10 +50,20 @@ class StravaCLI(cmd.Cmd):
   load [num] (default 20)
     Loads n activties. From latest
   load -next
-    Loads next activity from activity feed. Usually this will load the next 30 activities'''
+    Loads next activity from activity feed. Usually this will load the next 30 activities
+  load -all
+    Loads all available activities from activity feed.'''
 
-        args = self.parse(line, '-next num:?20')
-        (new, total) = self.client.load_activity_feed(next = args.next, num = int(args.num))
+        args = self.parse(line, '-all -next num:?20')
+        if args.all:
+            (new, total) = self.client.load_activity_feed(num=100)
+            s = new
+            while new > 0:
+                (new, total) = self.client.load_activity_feed(next = True)
+                s = s + new
+            new = s
+        else:
+            (new, total) = self.client.load_activity_feed(next = args.next, num = int(args.num))
         print('Loaded %d activities' % new)
     def do_activities(self, line):
         '''Dispaly loaded activity and let to filter them
@@ -142,18 +152,19 @@ class StravaCLI(cmd.Cmd):
         for param in params.split():
             p = param.split(':')
             if len(p) > 1:
+                # param need a parameter
                 default = p[1].find('?')
                 if default >= 0:
-                    parser.add_argument(p[0], nargs='?', default=p[1][default+1])    
+                    parser.add_argument(p[0], nargs='?', default=p[1][default+1:])    
                 else:
                     parser.add_argument(p[0])
             else:
-                value = p[0] == p[0].upper() # example: -K => True, -k => False
-                parser.add_argument(p[0], action='store_const', const=value)
-        args = parser.parse_args(line.split())
-        return args
-
-
+                if len(param) == 2 and param[0] == '-': # example -k or -K
+                    value = param == param.upper() # example: -K => True, -k => False
+                    parser.add_argument(param, action='store_const', const=value)
+                elif param[0] == '-': # example -next
+                    parser.add_argument(param, action='store_const', const=True)
+        return parser.parse_args(line.split())
 
 def init_readline():
     import atexit, os

@@ -10,7 +10,7 @@ class Client(object):
 
     def __init__(self, config_dirname=None, cert=None, debug=0):
         self.config = Config(config_dirname)
-        self.scraper = StravaScraper(self.config.basepath, self.get_owner(), cert, debug)
+        self.scraper = StravaScraper(self.config.basepath, self.config['owner_id'], cert, debug)
         self.activities = []
         self.selected_activities = []
 

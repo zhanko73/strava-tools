@@ -14,7 +14,7 @@ class Distance(Unit):
         if not self.value:
             return ''
         if self.value < 2000:
-            return '%.0f km' % self.m()
+            return '%.0f m' % self.m()
         return '%.2f km' % self.km()
 
     def m(self):

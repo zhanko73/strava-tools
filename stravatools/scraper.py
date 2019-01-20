@@ -30,14 +30,13 @@ class StravaScraper(object):
     csrf_token = None
     feed_cursor = None
     feed_before = None
-    owner = None
 
-    def __init__(self, cookie_dir, owner=None, cert=None, debug=0):
+    def __init__(self, cookie_dir, owner_id=None, cert=None, debug=0):
         self.cookies_path = cookie_dir / 'cookies.txt'
-        self.owner = owner
+        self.owner = (owner_id, None)
         self.cert = cert
         self.debug = debug
-        self.session = self.__create_session(owner == None)
+        self.session = self.__create_session(owner_id == None)
         self.get = lambda url, logged=True, allow_redirects=True: self.__store_response(self.__get(url, logged, allow_redirects))
         self.post = lambda url, data=None, logged=True, allow_redirects=True: self.__store_response(self.__post(url, data, logged, allow_redirects))
 
@@ -148,10 +147,6 @@ class StravaScraper(object):
     def logout(self):
         self.session.cookies.clear()
 
-    def greeting(self):
-        if self.config['owner_id']:
-            print('Welcome %s' % self.config['owner_name'])
-
     def send_kudo(self, activity_id):
         try:
             response = self.post(StravaScraper.URL_SEND_KUDO % activity_id)
@@ -169,7 +164,7 @@ class StravaScraper(object):
         self.__store_feed_params()
 
     def load_feed_next(self):
-        self.get(StravaScraper.URL_DASHBOARD_FEED % (self.config['owner_id'], self.feed_before, self.feed_cursor))
+        self.get(StravaScraper.URL_DASHBOARD_FEED % (self.owner[0], self.feed_before, self.feed_cursor))
         self.__store_feed_params()
 
     def __store_feed_params(self):
