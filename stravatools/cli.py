@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 
 import cmd, texttables, functools, argparse, readline, sys, os, getpass, datetime
-from stravatools.scraper import StravaScraper, NotLogged
+from stravatools.client import Client
+from stravatools.scraper import StravaScraper, NotLogged, WrongAuth
+from pprint import pprint
 
 from stravatools import __version__
 from stravatools._intern.tools import *
+
 
 class StravaCLI(cmd.Cmd):
 
@@ -12,12 +15,15 @@ class StravaCLI(cmd.Cmd):
         header_delimiter = '-'
 
     prompt = 'strava >> '
-    activities = []
-    selected_activities = []
     
-    def __init__(self, scraper):
+    def __init__(self, client):
         cmd.Cmd.__init__(self)
-        self.scraper = scraper
+        self.client = client
+        self.greeting()
+
+    def do_load_page(self, line):
+        (new, total) = self.client.load_page(line)
+        print('Loaded %d activities' % new)
 
     def do_login(self, line):
         '''Login to Strava (www.strava.com)
@@ -27,15 +33,16 @@ class StravaCLI(cmd.Cmd):
         username = input('Username: ')
         password = getpass.getpass('Password:')
         remember = 'n' != input('Remember session (password will not be stored) [Y/n]: ').lower()
-        if self.scraper.login(username, password, remember):
-            self.store_activities()
-        else:
+        try:
+            self.client.login(username, password, remember)
+            self.greeting()
+        except WrongAuth:
             print('Username or Password incorrect')
 
     def do_logout(self, line):
         '''Simply clean your cookies session if any was store'''
 
-        self.scraper.logout()
+        self.client.logout()
         print('Logged out')
 
     def do_load(self, line):
@@ -46,12 +53,8 @@ class StravaCLI(cmd.Cmd):
     Loads next activity from activity feed. Usually this will load the next 30 activities'''
 
         args = self.parse(line, '-next num:?20')
-        if args.next:
-            self.scraper.load_feed_next()
-        else:
-            self.scraper.load_dashboard(int(args.num))
-        self.store_activities()
-
+        (new, total) = self.client.load_activity_feed(next = args.next, num = int(args.num))
+        print('Loaded %d activities' % new)
     def do_activities(self, line):
         '''Dispaly loaded activity and let to filter them
   activities
@@ -67,45 +70,57 @@ class StravaCLI(cmd.Cmd):
 
   <pattern> [-]<string> ('-' negate)'''
 
-        args = self.parse(line, '-a: -t: -k -K')
+        args = self.parse(line, '-a: -k -K')
         predicate = all_predicates([
             self.filter_athlete(args.a),
-            self.filter_title(args.t),
             self.filter_kudo(args.k),
             self.filter_kudo(args.K)
         ])
         
-        self.selected_activities = list(filter(predicate, self.activities))
-        print('Activities %d/%d' % (len(self.selected_activities), len(self.activities)))
-        if len(self.selected_activities) > 0:
-            data = map(self.activity_for_output, self.selected_activities[::-1])
-            headers = ['Kudo', 'time', 'athlete', 'duration' ,'distance' ,'elevation', 'title']
-            with texttables.dynamic.DictWriter(sys.stdout, headers, dialect=StravaCLI.dialect) as w:
+        self.client.select_activities(predicate)
+
+        print('Activities %d/%d' % (len(self.client.selected_activities), len(self.client.activities)))
+        if len(self.client.selected_activities) > 0:
+            mapper = {
+                'Kudo': lambda a: '*' if a.dirty else u'\u2713' if a.kudoed else '',
+                'Time': lambda a: datetime.datetime.strftime(a.datetime, '%Y-%m-%d %H:%M:%S %Z'),
+                'Athlete': lambda a: a.athlete.name,
+                'Sport': lambda a: a.sport.name,
+                'Duration': lambda a: a.sport.duration.for_human(),
+                'Distance': lambda a: a.sport.distance.for_human(),
+                'Elevation': lambda a: a.sport.elevation.for_human(),
+                'Velocity': lambda a: a.sport.velocity().for_human(),
+                'Title': lambda a: a.title,
+            }
+
+            make_entry = lambda activity: map(lambda kv: (kv[0], kv[1](activity)), mapper.items())
+            data = list(map(dict, map(make_entry, self.client.selected_activities[::-1])))
+            with texttables.dynamic.DictWriter(sys.stdout, list(mapper.keys()), dialect=StravaCLI.dialect) as w:
                 w.writeheader()
                 w.writerows(data)
 
     def do_kudo(self, line):
         '''Send kudo to all filtered activities'''
 
-        for activity in filter(self.filter_kudo(False), self.selected_activities):
-            print('Kudoing %s for %s .. ' % (activity['athlete'], activity['title']), end='')
-            status = self.scraper.send_kudo(activity['id'])
-            if status:
-                activity['kudo'] = True
-                activity['dirty'] = True
-                print('Ok')
+        for activity in filter(self.filter_kudo(False), self.client.selected_activities):
+            print('Kudoing %s for %s .. ' % (activity.athlete.name, activity.title), end='')
+            if activity.send_kudo(): print('Ok')
             else: print('Failed')
 
     def do_quit(self, line):
         'Nicely quit the shell'
-        self.scraper.close()
+        self.client.close()
         print("You're safe to go!")
         return True
 
     def do_EOF(self, line):
         "Ctrl+D to quit, same as 'quit' command"
-        self.scraper.close()
+        self.client.close()
         return True
+
+    def greeting(self):
+        if self.client.get_owner():
+            print('Welcome %s' % self.client.get_owner().name)
 
     def emptyline(self):
         pass
@@ -117,35 +132,11 @@ class StravaCLI(cmd.Cmd):
             print('You need to login first')
             return False
 
-    def activity_for_output(self, activity):
-        data = {'Kudo':''}
-        data.update(activity)
-        if activity['kudo']: data['Kudo'] = u'\u2713'
-        if activity['dirty']: data['Kudo'] = '*'
-        data['title'] = data['title'][:30]
-        return data
-
-    def store_activities(self):
-        scraped_activities = list(map(lambda x: x.update({'dirty':False}) or x, self.scraper.activities()))
-        new_activities = []
-        for activity in scraped_activities:
-            stored_activity = find(self.filter_id(activity['id']), self.activities)
-            if not stored_activity or stored_activity['dirty']:
-                new_activities.append(activity)
-
-        self.activities.extend(new_activities)
-        self.activities = sorted(self.activities, reverse=True, key=lambda x: x['datetime'])
-        print("Loaded %d activities" % len(new_activities))
-
     def filter_athlete(self, param):
-        return lambda item: contains(param, item['athlete'])
-    def filter_title(self, param):
-        return lambda item: contains(param, item['title'])
+        return lambda activity: contains(param, activity.athlete.name)
     def filter_kudo(self, sent):
-        return lambda item: eq_bool(sent, item['kudo'])
-    def filter_id(self, param):
-        return lambda item: eq(param, item['id'])
-
+        return lambda activity: eq_bool(sent, activity.kudoed)
+    
     def parse(self, line, params):
         parser = argparse.ArgumentParser()
         for param in params.split():
@@ -194,6 +185,5 @@ def main():
     if debug > 0:
         print(args)
     init_readline()
-    scraper = StravaScraper(cert=args.cert, debug=debug)
-    cli = StravaCLI(scraper)
+    cli = StravaCLI(Client(cert=args.cert, debug=debug))
     cli.cmdloop()

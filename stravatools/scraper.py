@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import requests, http, time, traceback, sys, re, os, pathlib, json
+import requests, http, time, traceback, sys, re, os
 
 from bs4 import BeautifulSoup
 from datetime import datetime
@@ -9,6 +9,7 @@ from pprint import pprint
 
 from stravatools import __version__
 from stravatools._intern.tools import *
+from stravatools._intern.units import *
 
 class StravaScraper(object):
     USER_AGENT = "stravatools/%s" % __version__
@@ -29,21 +30,23 @@ class StravaScraper(object):
     csrf_token = None
     feed_cursor = None
     feed_before = None
+    owner = None
 
-    def __init__(self, cert=None, debug=0):
-        self.config = ScraperConfig()
-        self.debug = debug
+    def __init__(self, cookie_dir, owner=None, cert=None, debug=0):
+        self.cookies_path = cookie_dir / 'cookies.txt'
+        self.owner = owner
         self.cert = cert
-        self.session = self.__create_session()
+        self.debug = debug
+        self.session = self.__create_session(owner == None)
         self.get = lambda url, logged=True, allow_redirects=True: self.__store_response(self.__get(url, logged, allow_redirects))
         self.post = lambda url, data=None, logged=True, allow_redirects=True: self.__store_response(self.__post(url, data, logged, allow_redirects))
-        self.greeting()
 
-    def __create_session(self):
+    def __create_session(self, fresh):
         session = requests.Session()
-        cookies = http.cookiejar.MozillaCookieJar(str(self.config.cookies_path))
-        try: cookies.load()
-        except OSError: pass
+        cookies = http.cookiejar.MozillaCookieJar(str(self.cookies_path))
+        if not fresh:
+            try: cookies.load()
+            except OSError: pass
         session.cookies = cookies
         return session
 
@@ -105,15 +108,12 @@ class StravaScraper(object):
         if self.debug > 0: traceback.print_exc(file=sys.stdout)
 
     def close(self):
-        self.config.save()
         self.session.cookies.save()
         
     def login(self, email, password, remember_me=True):
-        self.get(StravaScraper.URL_LOGIN, logged=False, allow_redirects=False)
-        if self.response.status_code == 302:
-            self.greeting()
-            return True
-
+        # If the client was logged, we safely logout first
+        self.logout()
+        self.get(StravaScraper.URL_LOGIN, logged=False)
         soup = BeautifulSoup(self.response.content, 'lxml')
         utf8 = soup.find_all('input',
                              {'name': 'utf8'})[0].get('value').encode('utf-8')
@@ -131,19 +131,19 @@ class StravaScraper(object):
 
         self.post(StravaScraper.URL_SESSION, login_data, logged=False, allow_redirects=False)
         if self.response.status_code == 302 and self.response.headers['Location'] == StravaScraper.URL_LOGIN:
-            return False
+            raise WrongAuth()
 
         self.load_dashboard()
         try:
             assert("Log Out" in self.response.text)
             profile = first(self.soup.select('div.athlete-profile'))
-            self.config['owner_id'] = first(profile.select('a'), self.tag_get('href', lambda x:x.split('/')[-1]))
-            self.config['owner_name'] = first(profile.select('div.athlete-name'), self.tag_string())
-            self.greeting()
+            self.owner = (
+                first(profile.select('a'), tag_get('href', lambda x:x.split('/')[-1])),
+                first(profile.select('div.athlete-name'), tag_string())
+            )
         except Exception as e:
-            print('/!\\ Profile information cannot be retrieved, some features are disabled')
             self.__print_traceback()
-        return True
+            raise UnexpectedScrapped('Profile information cannot be retrieved', self.soup.text)
 
     def logout(self):
         self.session.cookies.clear()
@@ -176,9 +176,9 @@ class StravaScraper(object):
         remove_UTC = lambda x:x.replace(' UTC','')
 
         cards = list(self.soup.select('div.activity.feed-entry.card'))
-        ranks = list(each(cards, self.tag_get('data-rank')))
-        updated = list(each(cards, self.tag_get('data-updated-at')))
-        datetimesUTC = list(each(self.soup.select('div.activity.feed-entry.card time time'), self.tag_get('datetime')))
+        ranks = list(each(cards, tag_get('data-rank')))
+        updated = list(each(cards, tag_get('data-updated-at')))
+        datetimesUTC = list(each(self.soup.select('div.activity.feed-entry.card time time'), tag_get('datetime')))
         datetimes = list(map(remove_UTC, datetimesUTC))
         entries = list(zip(ranks, updated, datetimes))
         if len(entries) > 0:
@@ -189,66 +189,93 @@ class StravaScraper(object):
         for activity in self.soup.select('div.activity'):
             try:
                 entry = {
-                    'athlete': first(activity.select('a.entry-owner'), self.tag_string()),
-                    'time': first(activity.select('time time'), self.tag_string()),
-                    'datetime': first(activity.select('time time'), self.tag_get('datetime', self.parse_datetime)),
-                    'title': first(activity.select('h3 a'), self.tag_string()),
-                    'id': first(activity.select('h3 a'), self.tag_get('href', lambda x: x.split('/')[-1])),
-                    'distance': self.__extract_stat(activity, r'\s*Distance\s*(.+)\s'),
-                    'duration': self.__extract_stat(activity, r'\s*Time\s*(.+)\s'),
-                    'elevation':self.__extract_stat(activity, r'\s*Elevation Gain\s*(.+)\s'),
-                    'kudo': first(activity.select('div.entry-footer div.media-actions button.js-add-kudo')) is None
+                    'athlete_name': first(activity.select('a.entry-owner'), tag_string()),
+                    'kind': first(activity.select('.entry-body .media .app-icon'), extract_sport()),
+                    'time': first(activity.select('time time'), tag_string()),
+                    'datetime': first(activity.select('time time'), tag_get('datetime', parse_datetime('%Y-%m-%d %H:%M:%S %Z'))),
+                    'title': first(activity.select('h3 a'), tag_string()),
+                    'id': first(activity.select('h3 a'), tag_get('href', lambda x: x.split('/')[-1])),
+                    'distance': find_stat(activity, r'\s*Distance\s*(.+)\s', to_distance),
+                    'duration': find_stat(activity, r'\s*Time\s*(.+)\s', to_duration),
+                    'elevation':find_stat(activity, r'\s*Elevation Gain\s*(.+)\s', to_elevation),
+                    'kudoed': first(activity.select('div.entry-footer div.media-actions button.js-add-kudo')) is None
                 }
                 yield entry
             except Exception as e:
-                print("Unparsable %s" % activity)
+                print(e)
                 self.__print_traceback()
+                if self.debug > 0:
+                    print("Unparsable %s" % activity)
 
     # Utility functions
-    def tag_string(self, mapper=lambda x:x):
-        return lambda tag: mapper(tag.string.replace('\n',''))
-    def tag_get(self, attr, mapper=lambda x:x):
-        return lambda tag: mapper(tag.get(attr))
-    def parse_datetime(self, value):
-        return datetime.strptime(value, '%Y-%m-%d %H:%M:%S %Z')
+def tag_string(mapper=identity):
+    return lambda tag: mapper(tag.string.replace('\n',''))
+def tag_get(attr, mapper=identity):
+    return lambda tag: mapper(tag.get(attr))
+def parse_datetime(pattern):
+    return lambda value: datetime.strptime(value, pattern)
+def has_class(tag, predicate):
+    return any_match(tag.get('class'), predicate)
+def extract_sport():
+    class_sports = {
+    'run':'Run',
+    'ride':'Bike',
+    'ski':'Ski',
+    'swim':'Swim',
+    '':'Sport' # Must defined at last position
+    }
+    return lambda tag: first([ v 
+        for k,v in class_sports.items()
+        if has_class(tag, lambda cls: contains(k, cls)) ])
 
-    def __extract_stat(self, activity, pattern):
-        for stat in activity.select('div.media-body ul.list-stats .stat'):
-            m = re.search(pattern, stat.text)
-            if m: return m.group(1)
-        return ''
+def to_distance(value):
+    m = re.search(r'\s*(.+)\s+(km|m)\s*', value)
+    if m:
+        # remove thousand separator
+        num = float(re.sub(r'[^\d\.]', '', m.group(1)))
+        if m.group(2) == 'km':
+            num = num * 1000
+        return Distance(num)
+    return UNIT_EMPTY
+
+def to_elevation(value):
+    m = re.search(r'\s*(.+)\s+(km|m)\s*', value)
+    if m:
+        # remove thousand separator
+        num = float(re.sub(r'[^\d\.]', '', m.group(1)))
+        if m.group(2) == 'km':
+            num = num * 1000
+        return Elevation(num)
+    return UNIT_EMPTY
+
+
+def to_duration(value):
+    units = {
+        'h': lambda s: int(s) * 60 * 60,
+        'm': lambda s: int(s) * 60,
+        's': lambda s: int(s),
+    }
+    m = re.search(r'\s*(\d+)([hms])\s+(\d+)([hms])\s*', value)
+    if m:
+        (s1, t1, s2, t2) = m.groups()
+        return Duration(units[t1](s1) + units[t2](s2))
+
+    return UNIT_EMPTY
+
+def find_stat(activity, pattern, formatter=identity):
+    for stat in activity.select('div.media-body ul.list-stats .stat'):
+        m = re.search(pattern, stat.text)
+        if m: return formatter(m.group(1))
+    return UNIT_EMPTY
 
 class NotLogged(Exception):
     pass
 
-class ScraperConfig(object):
-    CONFIG_DIR = '/'.join( (str(pathlib.Path.home()), '.strava-tools'))
-    USER = 'user.json'
-    COOKIES = 'cookies.txt'
+class WrongAuth(Exception):
+    pass
 
-    def __init__(self, config_path=None):
-        self.basepath = pathlib.Path(config_path if config_path else ScraperConfig.CONFIG_DIR)
-        self.basepath.mkdir(parents=True, exist_ok=True)
-        self.user = self.__load(ScraperConfig.USER)
-        self.cookies_path = self.basepath / ScraperConfig.COOKIES
+class UnexpectedScrapped(Exception):
+    def __init__(self, message, content):
+        self.message = message
+        self.content = content
 
-    def __getitem__(self, key):
-        if key in self.user: return self.user[key]
-        return None
-
-    def __setitem__(self, key, value):
-        self.user[key] = value
-
-    def __load(self, filename):
-        path = self.basepath / filename
-        if path.exists():
-            with path.open() as file:
-                return json.loads(file.read())
-        return {}
-
-    def __save(self, data, filname):
-        with (self.basepath / filname).open('w') as file:
-            file.write(json.dumps(data))
-
-    def save(self):
-        self.__save(self.user, ScraperConfig.USER)
