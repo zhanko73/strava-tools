@@ -34,7 +34,7 @@ def disjonction(a, b):
     return lambda value: a(value) or b(value)
 
 def all_predicates(predicates):
-    return functools.reduce(conjonction, predicates)
+    return functools.reduce(conjonction, predicates, lambda x: True)
 
 def id_eq(a):
     return lambda b: a.id == b.id

@@ -35,7 +35,7 @@ setup(
     install_requires=requirements,
      entry_points={
         'console_scripts': [
-            'strava-shell = stravatools.cli:main',
+            'strava-shell = stravatools.cli.shell:main'
         ],
     },
 )
