@@ -116,7 +116,7 @@ def kudo(ctx):
 
 def greeting(client):
     if client.get_owner():
-        print('Welcome %s' % client.get_owner().name)
+        click.secho('Welcome %s' % client.get_owner().name)
 
 def filter_athlete(param):
     return lambda activity: contains(param, activity.athlete.name)
