@@ -9,22 +9,22 @@ from stravatools.cli.commands import *
 histfile = os.path.join(os.path.expanduser("~"), ".strava_history")
 
 @shell(prompt='strava >> ', intro='Strava Shell %s' % __version__, hist_file=histfile)
+@click.option('--cert', help='Path SSL certificat Root CA')
+@click.option('-v', '--verbose', count=True)
 @click.pass_context
-def cli_shell(ctx):
+def cli_shell(ctx, cert, verbose):
     client = ctx.obj['client']
     greeting(client)
+
+for command in commands.__dict__.values():
+    if isinstance(command, click.core.Command):
+        cli_shell.add_command(command)
 
 @click.command()
 @click.option('--cert', help='Path SSL certificat Root CA')
 @click.option('-v', '--verbose', count=True)
 def main(cert, verbose):
-    """Simple program that greets NAME for a total of COUNT times."""
-    
     cli_shell(obj = {'client': Client(cert=cert, debug=verbose)})
-
-for command in commands.__dict__.values():
-    if isinstance(command, click.core.Command):
-        cli_shell.add_command(command)
 
 if __name__ == '__main__':
     main()
