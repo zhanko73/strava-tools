@@ -19,12 +19,18 @@ class Client(object):
             return Athlete(self.config['owner_id'], self.config['owner_name'])
         return None
 
+    def last_username(self):
+        if self.config['username']:
+            return self.config['username']
+        return None
+
     def login(self, username, password, remember=True):
         self.scraper.login(username, password, remember)
 
         (oid, name) = self.scraper.owner
         self.config['owner_id'] = oid
         self.config['owner_name'] = name
+        self.config['username'] = username
         self.store_activities()
 
     def logout(self):
@@ -45,9 +51,9 @@ class Client(object):
     def select_activities(self, predicate):
         self.selected_activities = list(filter(predicate, self.activities))
 
-    def close(self):
+    def close(self):        
         self.config.save()
-        self.scraper.close()
+        self.scraper.save_state()
 
     def load_page(self, page):
         self.scraper.load_page(page)

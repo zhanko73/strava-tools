@@ -1,14 +1,17 @@
 
 import click, os
-from click_shell import shell
 from stravatools import __version__
 from stravatools.client import Client
 from stravatools.cli import commands
+from stravatools.cli.click_shell_plus import shell
 from stravatools.cli.commands import *
 
 histfile = os.path.join(os.path.expanduser("~"), ".strava_history")
 
-@shell(prompt='strava >> ', intro='Strava Shell %s' % __version__, hist_file=histfile)
+def close_client(ctx):
+    ctx.obj['client'].close()
+
+@shell(prompt='strava >> ', intro='Strava Shell %s' % __version__, hist_file=histfile, on_finish=close_client)
 @click.option('--cert', help='Path SSL certificat Root CA')
 @click.option('-v', '--verbose', count=True)
 @click.pass_context

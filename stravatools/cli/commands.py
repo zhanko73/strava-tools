@@ -22,10 +22,12 @@ def login(ctx):
   and eventually store a cookie to keep your strava session open'''
     
     try:
-        ctx.obj['client'].login(
-            click.prompt('Username'),
-            click.prompt('Password', hide_input=True),
-            click.confirm('Remember session ?', default=True))
+        client = ctx.obj['client']
+        username = click.prompt('Username', default=client.last_username())
+        password = click.prompt('Password', hide_input=True)
+        remember = click.confirm('Remember session ?', default=True)
+        with spinner():
+            client.login(username, password, remember)
         greeting(ctx.obj['client'])
     except WrongAuth:
         print('Username or Password incorrect')

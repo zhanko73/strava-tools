@@ -106,7 +106,7 @@ class StravaScraper(object):
     def __print_traceback(self):
         if self.debug > 0: traceback.print_exc(file=sys.stdout)
 
-    def close(self):
+    def save_state(self):
         self.session.cookies.save()
         
     def login(self, email, password, remember_me=True):
