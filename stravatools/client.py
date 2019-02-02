@@ -51,7 +51,7 @@ class Client(object):
     def select_activities(self, predicate):
         self.selected_activities = list(filter(predicate, self.activities))
 
-    def close(self):        
+    def close(self):
         self.config.save()
         self.scraper.save_state()
 
