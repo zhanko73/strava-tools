@@ -2,8 +2,11 @@ Attempting to make a containerized version of the tool. NOT YET READY!!!
 
 
 
+As you can see this is a fork from https://github.com/terrettaz/strava-tools.
+
 Thank you for the original developers. You can read their work, comments bellow.
 
+--------------------------------------------------------------
 strava-tools
 ============
 
