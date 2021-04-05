@@ -1,3 +1,9 @@
+Attempting to make a containerized version of the tool. NOT YET READY!!!
+
+
+
+Thank you for the original developers. You can read their work, comments bellow.
+
 strava-tools
 ============
 
